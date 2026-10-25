@@ -7,7 +7,7 @@ app = FastAPI(
 )
 
 
-@app.get("/courses")
+@app.get("/")
 def root():
     return {
         "message": "Welcome my Azure Agentic AI project!",
