@@ -1,0 +1,37 @@
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv313\Scripts\Activate.ps1
+python -m uvicorn app.main:app --reload
+
+ to run tests
+ cd C:\Users\bhanu\projects\azure-agentic-ai
+.\.venv313\Scripts\python.exe -m pytest tests/test_api.py -v
+
+
+
+Find POST /tasks, select Try it out, and submit this JSON:
+{
+  "title": "Learn LangGraph",
+  "description": "Build my first agent workflow",
+  "priority": "high"
+}
+
+
+cd C:\Users\Bhanu\projects\azure-agentic-ai
+.\.venv\Scripts\Activate.ps1
+
+ollama --version
+ollama list
+ollama pull llama3.2:3b
+ollama run llama3.2:3b
+
+python -m pip install ollama
+python -m pip freeze > requirements.txt
+
+$env:OLLAMA_MODEL = "llama3.2:3b"
+$env:OLLAMA_HOST = "http://localhost:11434"
+
+
+Open http://127.0.0.1:8000/docs, find POST /tasks/suggest, and submit:
+{
+  "request": "Create a high-priority task to review my Azure architecture"
+}

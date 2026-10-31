@@ -21,4 +21,17 @@ class TaskResponse(BaseModel):
     description: str
     priority: Literal["low", "medium", "high"]
     completed:bool = False
-    
+
+class TaskSuggestionRequest(BaseModel):
+    request: str = Field(
+        min_length=3,
+        max_length=500,
+        description="Describe the task you want the AI to suggest.",
+    )
+class TaskExplanationRequest(BaseModel):
+    request: str = Field(
+        min_length=3,
+        max_length=500,
+        description="Explain the task you want the AI to explain.",
+    )
+

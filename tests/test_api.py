@@ -4,7 +4,11 @@ from fastapi.testclient import TestClient
 
 from app.main import app, tasks
 import app.main as main_module
-
+from app.llm import(
+    LLMNotconfigured,
+    LLMProviderError,
+    Tasksuggestion,
+) 
 client = TestClient(app)
 
 @pytest.fixture(autouse=True)
@@ -104,6 +108,85 @@ def test_task_title_is_required():
     response = client.post(
         "/tasks",
         json={"description": "A task without a title"},
+    )
+
+    assert response.status_code == 422
+
+
+def test_suggest_task_success(monkeypatch):
+    def fake_suggest_task(user_request):
+        assert "Azure architecture" in user_request
+        return Tasksuggestion(
+            title="Review Azure architecture",
+            description="Review the current cloud design",
+            priority="high",
+        )
+
+    monkeypatch.setattr(
+        "app.main.suggest_task",
+        fake_suggest_task,
+    )
+
+    response = client.post(
+        "/tasks/suggest",
+        json={
+            "request": "Create a high-priority task to review "
+            "my Azure architecture"
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "title": "Review Azure architecture",
+        "description": "Review the current cloud design",
+        "priority": "high",
+    }
+
+
+def test_suggest_task_missing_configuration(monkeypatch):
+    def fake_suggest_task(user_request):
+        raise LLMNotconfigured("Missing configuration")
+
+    monkeypatch.setattr(
+        "app.main.suggest_task",
+        fake_suggest_task,
+    )
+
+    response = client.post(
+        "/tasks/suggest",
+        json={"request": "Review my cloud architecture"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == (
+        "AI service not configured"
+    )
+
+
+def test_suggest_task_provider_failure(monkeypatch):
+    def fake_suggest_task(user_request):
+        raise LLMProviderError("Internal provider details")
+
+    monkeypatch.setattr(
+        "app.main.suggest_task",
+        fake_suggest_task,
+    )
+
+    response = client.post(
+        "/tasks/suggest",
+        json={"request": "Review my cloud architecture"},
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == (
+        "AI service could not generate a task suggestion"
+    )
+
+
+def test_suggest_task_rejects_short_request():
+    response = client.post(
+        "/tasks/suggest",
+        json={"request": "OK"},
     )
 
     assert response.status_code == 422

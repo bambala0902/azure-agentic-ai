@@ -1,0 +1,13 @@
+Week	What you will build or learn
+1	Python project setup, Git, FastAPI and testing
+2	REST APIs, Pydantic, configuration and error handling
+3	LLM integration and prompt engineering
+4	Function calling and external tools
+5	LangGraph state, nodes and conditional workflows
+6	Planning, memory, checkpoints and human approval
+7	Embeddings and vector search
+8	RAG with Azure AI Search
+9	Multi-agent coordination
+10	Evaluation, security and reliability
+11	Docker and Azure deployment
+12	CI/CD, monitoring and portfolio preparation

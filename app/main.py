@@ -1,6 +1,13 @@
 from fastapi import FastAPI, HTTPException, status
-from app.models import TaskCreate, TaskResponse
-
+from app.models import TaskCreate, TaskResponse, TaskSuggestionRequest
+from app.llm import(
+    LLMNotconfigured,
+    LLMProviderError,
+    TaskExplanation,
+    Tasksuggestion,
+    explain_task,
+    suggest_task,
+) 
 app = FastAPI(
     title="Azure Agentic AI",
     description="My hands-on AI engineering learning project",
@@ -55,3 +62,33 @@ def get_task(task_id: int) -> TaskResponse:
         raise HTTPException(status_code = status.HTTP_404_NOT_FOUND, detail=f"Task {task_id} not found")
     return task
 
+@app.post("/tasks/suggest", response_model=Tasksuggestion)
+def suggest_task_endpoint(body : TaskSuggestionRequest) -> Tasksuggestion:
+    try:
+        return suggest_task(body.request)
+
+    except LLMNotconfigured as exc:
+        raise HTTPException(status_code = 503, detail="AI service not configured") from exc
+
+    except LLMProviderError as exc:
+        detail = "AI service could not generate a task suggestion"
+        cause = exc.__cause__
+        if cause is not None:
+            detail = f"{detail}. {type(cause).__name__}: {cause}"
+        raise HTTPException(status_code=502, detail=detail) from exc
+
+
+@app.post("/tasks/explain", response_model=TaskExplanation)
+def explain_task_endpoint(body: TaskExplanationRequest) -> TaskExplanation:
+    try:
+        return explain_task(body.request)
+
+    except LLMNotconfigured as exc:
+        raise HTTPException(status_code=503, detail="AI service not configured") from exc
+
+    except LLMProviderError as exc:
+        detail = "AI service could not explain the task"
+        cause = exc.__cause__
+        if cause is not None:
+            detail = f"{detail}. {type(cause).__name__}: {cause}"
+        raise HTTPException(status_code=502, detail=detail) from exc
