@@ -190,3 +190,58 @@ def test_suggest_task_rejects_short_request():
     )
 
     assert response.status_code == 422
+
+def test_execute_create_task_tool():
+    from app.main import execute_tool
+
+    result = execute_tool(
+        "create_task",
+        {
+            "title": "Learn LangGraph",
+            "description": "Build an agent workflow",
+            "priority": "high",
+        },
+    )
+
+    assert result["id"] == 1
+    assert result["title"] == "Learn LangGraph"
+    assert result["priority"] == "high"
+
+
+def test_execute_list_tasks_tool():
+    from app.main import execute_tool
+
+    execute_tool(
+        "create_task",
+        {
+            "title": "Build AI agent",
+            "description": "Practice tool calling",
+            "priority": "medium",
+        },
+    )
+
+    result = execute_tool("list_tasks", {})
+
+    assert len(result) == 1
+    assert result[0]["title"] == "Build AI agent"
+
+
+def test_execute_unknown_tool_rejected():
+    from app.main import execute_tool
+
+    with pytest.raises(ValueError):
+        execute_tool("delete_all_data", {})
+
+
+def test_execute_tool_rejects_invalid_arguments():
+    from app.main import execute_tool
+
+    with pytest.raises(ValueError):
+        execute_tool(
+            "create_task",
+            {
+                "title": "OK",
+                "description": "Invalid title",
+                "priority": "urgent",
+            },
+        )

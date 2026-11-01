@@ -35,3 +35,6 @@ class TaskExplanationRequest(BaseModel):
         description="Explain the task you want the AI to explain.",
     )
 
+class AssistantRequest(BaseModel):
+    message: str = Field(min_length=3, max_length=2000)
+
