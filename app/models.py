@@ -44,5 +44,10 @@ class AssistantRequest(BaseModel):
         description = "Indentifies a conversation thread.",
         )
 
-        
 
+class AssistantResumeRequest(BaseModel):
+    thread_id : str = Field(
+        min_length=1,
+        max_length=100,
+    )
+    approved: bool

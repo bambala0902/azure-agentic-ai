@@ -26,7 +26,10 @@ def build_agent(checkpointer):
                 "Use create_task when the user explicitly requests "
                 "task creation. Use list_tasks when the user requests "
                 "existing tasks. Do not claim an action succeeded "
-                "unless a tool confirms it."
+                "unless a tool confirms it. "
+                "If the tool result says the task was rejected, "
+                "say that the task was not created. "
+                "Do not repeat its title or priority as if it exists."
             ),
         }
 

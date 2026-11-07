@@ -17,6 +17,9 @@ import sqlite3
 from langgraph.checkpoint.sqlite import SqliteSaver
 from contextlib import asynccontextmanager
 from app.agents.graph import build_agent
+from langgraph.types import Command
+from app.models import AssistantResumeRequest
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -136,6 +139,30 @@ def execute_tool(tool_name: str, arguments: dict):
     raise ValueError(f"Tool not allowed: {tool_name}")
 
 
+def message_content(message):
+    if hasattr(message, "content"):
+        return message.content
+    return message["content"]
+
+
+def response_text(messages):
+    """Prefer a rejected tool result over the model's later summary."""
+    for message in reversed(messages):
+        if getattr(message, "name", None) != "create_task":
+            continue
+        raw = message_content(message)
+        if not isinstance(raw, str):
+            break
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError:
+            break
+        if payload.get("status") == "rejected":
+            return payload.get("message") or "The task was rejected by the user."
+        break
+    return message_content(messages[-1])
+
+
 @app.post("/assistant/chat")
 def assistant_chat(body: AssistantRequest):
     try:
@@ -152,15 +179,22 @@ def assistant_chat(body: AssistantRequest):
                 "configurable":{"thread_id": body.thread_id},
                 "recursion_limit": 10}
         )
+        # Check whether LangGraph paused for approval.
+        interrupts = result.get("__interrupt__", [])
+        if interrupts:
+            approval_request = interrupts[0].value
+            return {
+                "status": "approval_required",
+                "thread_id": body.thread_id,
+                "approval": approval_request,
+                "workflow" : "langgraph",
+            }
+
         messages = result["messages"]
-        final_message = messages[-1]
-        content = (
-            final_message.content
-            if hasattr(final_message, "content")
-            else final_message["content"]
-        )
+        content = response_text(messages)
 
         return {
+            "status": "completed",
             "response": content,
             "messages_count": len(messages),
             "thread_id": body.thread_id,
@@ -171,4 +205,53 @@ def assistant_chat(body: AssistantRequest):
         raise HTTPException(
             status_code = 502,
             detail = "The LangGraph agent could not process the request"
+        ) from exc
+
+@app.post("/assistant/resume")
+def assistant_resume(body: AssistantResumeRequest):
+    config = {
+        "configurable": {"thread_id": body.thread_id},
+        "recursion_limit": 10,
+    }
+    try:
+        snapshot = app.state.agent_graph.get_state(config)
+        if not snapshot.interrupts:
+            raise HTTPException(
+                status_code=409,
+                detail="This thread is not waiting for approval.",
+            )
+
+        result = app.state.agent_graph.invoke(
+            Command(
+                resume={
+                    "approved": body.approved,
+                }
+            ),
+            config=config,
+        )
+        # A workflow can pause again if it encounters another interrupt.
+        interrupts = result.get("__interrupt__", [])
+        if interrupts:
+            approval_request = interrupts[0].value
+            return {
+                "status": "approval_required",
+                "thread_id": body.thread_id,
+                "approval": approval_request,
+                "workflow" : "langgraph",
+            }
+        messages = result["messages"]
+        content = response_text(messages)
+        return {
+            "status": "completed",
+            "response": content,
+            "messages_count": len(messages),
+            "thread_id": body.thread_id,     
+            "workflow" : "langgraph",
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code = 502,
+            detail = "The LangGraph workflow could not be resumed."
         ) from exc
