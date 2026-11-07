@@ -37,4 +37,12 @@ class TaskExplanationRequest(BaseModel):
 
 class AssistantRequest(BaseModel):
     message: str = Field(min_length=3, max_length=2000)
+    thread_id : str = Field(
+        default ="default",
+        min_length =3,
+        max_length = 100,
+        description = "Indentifies a conversation thread.",
+        )
+
+        
 

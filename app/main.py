@@ -13,12 +13,31 @@ import ollama
 from app.tools.task_tools import TASK_TOOLS
 import os
 from app.models import AssistantRequest
-from app.agents.graph import agent_graph
+import sqlite3
+from langgraph.checkpoint.sqlite import SqliteSaver
+from contextlib import asynccontextmanager
+from app.agents.graph import build_agent
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    connection = sqlite3.connect(
+    "agent.memory.db",
+    check_same_thread = False,
+    )
+    checkpointer = SqliteSaver(connection)
+    checkpointer.setup()
+    app.state.agent_graph = build_agent(checkpointer)
+    yield
+    connection.close()
+
+"""Important: agent_memory.db is created locally. The connection stays open while FastAPI is running and is closed during application shutdown.
+This is a local learning setup; production deployments need appropriate database lifecycle and concurrency management."""
 
 app = FastAPI(
     title="Azure Agentic AI",
     description="My hands-on AI engineering learning project",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # Temporary in-memory storage for this lesson.
@@ -120,7 +139,7 @@ def execute_tool(tool_name: str, arguments: dict):
 @app.post("/assistant/chat")
 def assistant_chat(body: AssistantRequest):
     try:
-        result = agent_graph.invoke(
+        result = app.state.agent_graph.invoke(
             {
                 "messages": [
                     {
@@ -129,7 +148,9 @@ def assistant_chat(body: AssistantRequest):
                     }
                 ]
             },
-            config = {"recursion_limit": 10}
+            config = {
+                "configurable":{"thread_id": body.thread_id},
+                "recursion_limit": 10}
         )
         messages = result["messages"]
         final_message = messages[-1]
@@ -142,6 +163,7 @@ def assistant_chat(body: AssistantRequest):
         return {
             "response": content,
             "messages_count": len(messages),
+            "thread_id": body.thread_id,
             "workflow" : "langgraph",
         }
 

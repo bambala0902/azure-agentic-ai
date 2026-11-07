@@ -6,7 +6,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from app.agents.task_tools import TASK_TOOLS
 
 
-def build_agent():
+def build_agent(checkpointer):
     model = ChatOllama(
         model= os.getenv("OLLAMA_MODEL", "llama3.2:3b"),
         base_url = os.getenv(
@@ -56,10 +56,6 @@ def build_agent():
     # After executing a tool, return to the agent.
     workflow.add_edge("tools", "agent")
 
-    return workflow.compile()
-
-
-# Compile the graph once when the module is imported.
-agent_graph = build_agent()
+    return workflow.compile(checkpointer=checkpointer)
 
 

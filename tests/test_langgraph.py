@@ -19,15 +19,16 @@ def test_langgraph_chat_endpoint():
         ]
     }
 
-    with patch(
-        "app.main.agent_graph.invoke",
-        return_value=fake_result,
-    ) as mock_invoke:
-
-        response = client.post(
-            "/assistant/chat",
-            json={"message": "Hello"},
-        )
+    with client:
+        with patch.object(
+            client.app.state.agent_graph,
+            "invoke",
+            return_value=fake_result,
+        ) as mock_invoke:
+            response = client.post(
+                "/assistant/chat",
+                json={"message": "Hello"},
+            )
 
     assert response.status_code == 200
     assert response.json()["response"] == (
@@ -39,15 +40,16 @@ def test_langgraph_chat_endpoint():
 
 
 def test_langgraph_agent_failure():
-    with patch(
-        "app.main.agent_graph.invoke",
-        side_effect=RuntimeError("Model unavailable"),
-    ):
-
-        response = client.post(
-            "/assistant/chat",
-            json={"message": "Create a task"},
-        )
+    with client:
+        with patch.object(
+            client.app.state.agent_graph,
+            "invoke",
+            side_effect=RuntimeError("Model unavailable"),
+        ):
+            response = client.post(
+                "/assistant/chat",
+                json={"message": "Create a task"},
+            )
 
     assert response.status_code == 502
 
