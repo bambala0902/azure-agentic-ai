@@ -163,6 +163,29 @@ def response_text(messages):
     return message_content(messages[-1])
 
 
+def get_pending_approval(graph, thread_id: str):
+    """Find an outstanding approval interrupt for a conversation."""
+
+    config = {
+        "configurable": {
+            "thread_id": thread_id,
+        }
+    }
+
+    snapshot = graph.get_state(config)
+
+    for task in snapshot.tasks:
+        for pending_interrupt in task.interrupts:
+            approval = pending_interrupt.value
+
+            if (
+                isinstance(approval, dict)
+                and approval.get("type") == "approval_required"
+            ):
+                return approval
+
+    return None
+
 @app.post("/assistant/chat")
 def assistant_chat(body: AssistantRequest):
     try:
@@ -207,18 +230,27 @@ def assistant_chat(body: AssistantRequest):
             detail = "The LangGraph agent could not process the request"
         ) from exc
 
+
+
 @app.post("/assistant/resume")
 def assistant_resume(body: AssistantResumeRequest):
-    config = {
-        "configurable": {"thread_id": body.thread_id},
-        "recursion_limit": 10,
-    }
     try:
-        snapshot = app.state.agent_graph.get_state(config)
-        if not snapshot.interrupts:
+        # Do not resume a conversation without a pending approval.
+        approval = get_pending_approval(
+            app.state.agent_graph,
+            body.thread_id,
+        )
+
+        if approval is None:
             raise HTTPException(
                 status_code=409,
-                detail="This thread is not waiting for approval.",
+                detail="No pending approval exists for this conversation",
+            )
+
+        if approval.get("tool") != "create_task":
+            raise HTTPException(
+                status_code=409,
+                detail="This approval request cannot be processed here",
             )
 
         result = app.state.agent_graph.invoke(
@@ -227,31 +259,74 @@ def assistant_resume(body: AssistantResumeRequest):
                     "approved": body.approved,
                 }
             ),
-            config=config,
+            config={
+                "configurable": {
+                    "thread_id": body.thread_id,
+                },
+                "recursion_limit": 10,
+            },
         )
-        # A workflow can pause again if it encounters another interrupt.
+
         interrupts = result.get("__interrupt__", [])
+
         if interrupts:
-            approval_request = interrupts[0].value
             return {
                 "status": "approval_required",
                 "thread_id": body.thread_id,
-                "approval": approval_request,
-                "workflow" : "langgraph",
+                "approval": interrupts[0].value,
             }
+
         messages = result["messages"]
-        content = response_text(messages)
+        final_message = messages[-1]
+
+        content = (
+            final_message.content
+            if hasattr(final_message, "content")
+            else final_message["content"]
+        )
+
         return {
             "status": "completed",
+            "decision": "approved" if body.approved else "rejected",
             "response": content,
-            "messages_count": len(messages),
-            "thread_id": body.thread_id,     
-            "workflow" : "langgraph",
+            "thread_id": body.thread_id,
+            "workflow": "langgraph",
         }
+
     except HTTPException:
         raise
+
     except Exception as exc:
         raise HTTPException(
-            status_code = 502,
-            detail = "The LangGraph workflow could not be resumed."
+            status_code=502,
+            detail="The LangGraph workflow could not be resumed",
+        ) from exc
+
+
+
+@app.get("/assistant/approval/{thread_id}")
+def get_approval_status(thread_id: str):
+    try:
+        approval = get_pending_approval(
+            app.state.agent_graph,
+            thread_id,
+        )
+
+        if approval is None:
+            return {
+                "status": "no_pending_approval",
+                "thread_id": thread_id,
+                "approval": None,
+            }
+
+        return {
+            "status": "approval_required",
+            "thread_id": thread_id,
+            "approval": approval,
+        }
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Could not retrieve approval status",
         ) from exc

@@ -6,6 +6,33 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 
+def make_pending_approval_snapshot():
+    approval = {
+        "type": "approval_required",
+        "tool": "create_task",
+        "arguments": {
+            "title": "Learn LangGraph",
+            "description": "",
+            "priority": "high",
+        },
+    }
+
+    pending_interrupt = MagicMock(value=approval)
+    pending_task = MagicMock(interrupts=[pending_interrupt])
+
+    snapshot = MagicMock()
+    snapshot.tasks = [pending_task]
+
+    return snapshot
+
+
+def make_empty_snapshot():
+    snapshot = MagicMock()
+    snapshot.tasks = []
+
+    return snapshot
+
+
 def test_assistant_chat_returns_approval_request():
     with TestClient(app) as client:
         mock_graph = MagicMock()
@@ -45,6 +72,10 @@ def test_assistant_resume_approves_workflow():
     with TestClient(app) as client:
         mock_graph = MagicMock()
 
+        mock_graph.get_state.return_value = (
+            make_pending_approval_snapshot()
+        )
+
         mock_graph.invoke.return_value = {
             "messages": [
                 MagicMock(content="Task created successfully")
@@ -63,6 +94,7 @@ def test_assistant_resume_approves_workflow():
 
         assert response.status_code == 200
         assert response.json()["status"] == "completed"
+        assert response.json()["decision"] == "approved"
 
         command = mock_graph.invoke.call_args.args[0]
         assert command.resume == {"approved": True}
@@ -71,6 +103,10 @@ def test_assistant_resume_approves_workflow():
 def test_assistant_resume_rejects_workflow():
     with TestClient(app) as client:
         mock_graph = MagicMock()
+
+        mock_graph.get_state.return_value = (
+            make_pending_approval_snapshot()
+        )
 
         mock_graph.invoke.return_value = {
             "messages": [
@@ -90,6 +126,60 @@ def test_assistant_resume_rejects_workflow():
 
         assert response.status_code == 200
         assert response.json()["status"] == "completed"
+        assert response.json()["decision"] == "rejected"
 
         command = mock_graph.invoke.call_args.args[0]
         assert command.resume == {"approved": False}
+
+
+def test_get_approval_status_returns_pending_approval():
+    with TestClient(app) as client:
+        mock_graph = MagicMock()
+        mock_graph.get_state.return_value = (
+            make_pending_approval_snapshot()
+        )
+
+        app.state.agent_graph = mock_graph
+
+        response = client.get(
+            "/assistant/approval/test-approval-004"
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "approval_required"
+        assert response.json()["approval"]["tool"] == "create_task"
+
+
+def test_get_approval_status_returns_no_pending_approval():
+    with TestClient(app) as client:
+        mock_graph = MagicMock()
+        mock_graph.get_state.return_value = make_empty_snapshot()
+
+        app.state.agent_graph = mock_graph
+
+        response = client.get(
+            "/assistant/approval/test-approval-005"
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "no_pending_approval"
+        assert response.json()["approval"] is None
+
+
+def test_resume_without_pending_approval_returns_conflict():
+    with TestClient(app) as client:
+        mock_graph = MagicMock()
+        mock_graph.get_state.return_value = make_empty_snapshot()
+
+        app.state.agent_graph = mock_graph
+
+        response = client.post(
+            "/assistant/resume",
+            json={
+                "thread_id": "test-approval-006",
+                "approved": True,
+            },
+        )
+
+        assert response.status_code == 409
+        mock_graph.invoke.assert_not_called()
